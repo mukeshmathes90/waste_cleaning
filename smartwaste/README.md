@@ -18,30 +18,42 @@ AI-powered waste detection system using ESP32 cameras, YOLO object detection, an
 pip install -r requirements.txt
 ```
 
-### 2. Download YOLO Model
+### 2. Configure Environment Variables (IMPORTANT!)
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env with your actual values
+# SECURITY: Change default passwords before deployment!
+```
+
+### 3. Download YOLO Model
 Download `yolov8n.pt` from [Ultralytics](https://github.com/ultralytics/ultralytics) and place it in the project root:
 ```bash
 # The app will automatically download it on first run, or manually:
 wget https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n.pt
 ```
 
-### 3. Run Locally
+### 4. Run Locally
 ```bash
-python app.py
+python run.py
 ```
 Visit: http://localhost:10000
 
-### 4. Deploy to Render
+### 5. Deploy to Render
 1. Connect your GitHub repository
 2. Set build command: `pip install -r requirements.txt`
 3. Set start command: `gunicorn app:app`
-4. Deploy!
+4. **IMPORTANT**: Configure environment variables in Render dashboard
+5. Deploy!
 
 ## Login Credentials
 
-**No signup required - hardcoded users:**
-- Admin: `admin` / `admin123`
-- Officer: `officer` / `waste2026`
+**Default credentials (CHANGE THESE!):**
+- Admin: `admin` / `admin123` (set via ADMIN_PASSWORD env var)
+- Officer: `officer` / `waste2026` (set via OFFICER_PASSWORD env var)
+
+**⚠️ SECURITY WARNING**: Change default passwords before deployment!
 
 ## API Endpoints
 
@@ -98,12 +110,28 @@ smartwaste/
 
 ## Environment Variables
 
-For production deployment, set:
-```
+**Required for production deployment:**
+
+```bash
+# Security (REQUIRED)
+SECRET_KEY=your-long-random-secret-key-here
+ADMIN_PASSWORD=your-secure-admin-password
+OFFICER_PASSWORD=your-secure-officer-password
+
+# Email alerts (optional)
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASS=your-app-password
+EMAIL_TO=municipal@city.gov
+
+# Optional
 PORT=10000
 ```
+
+**Setting up in Render:**
+1. Go to your service dashboard
+2. Click "Environment" tab
+3. Add each variable above
+4. Redeploy service
 
 ## License
 

@@ -12,20 +12,28 @@ import sqlite3
 from werkzeug.utils import secure_filename
 import base64
 from ultralytics import YOLO
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'smartwaste2026_secret_key'
+# Security: Use environment variables for sensitive data
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-EMAIL_USER = "example@gmail.com"
-EMAIL_PASS = "password"
 
-# Hardcoded users (NO SIGNUP)
+# Email configuration from environment variables
+EMAIL_USER = os.environ.get('EMAIL_USER', '')
+EMAIL_PASS = os.environ.get('EMAIL_PASS', '')
+EMAIL_TO = os.environ.get('EMAIL_TO', 'municipal@city.gov')
+
+# User credentials from environment variables (NO SIGNUP)
 users = {
-    "admin": "admin123",
-    "officer": "waste2026"
+    "admin": os.environ.get('ADMIN_PASSWORD', 'admin123'),
+    "officer": os.environ.get('OFFICER_PASSWORD', 'waste2026')
 }
 
 # Initialize YOLO model
@@ -53,10 +61,16 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def send_email_alert(image_path, detection_confidence):
+    """Send email alert for waste detection"""
     try:
+        # Skip email if credentials not configured
+        if not EMAIL_USER or not EMAIL_PASS:
+            print(f"Email alert skipped - credentials not configured. Detection: {detection_confidence:.2f}%")
+            return True
+            
         msg = MIMEMultipart()
         msg['From'] = EMAIL_USER
-        msg['To'] = "municipal@city.gov"
+        msg['To'] = EMAIL_TO
         msg['Subject'] = "🚨 Waste Detected - Smart Monitoring Alert"
         
         body = f"""
@@ -85,9 +99,17 @@ def send_email_alert(image_path, detection_confidence):
             )
             msg.attach(part)
         
-        # Note: Email sending disabled for demo - would need real SMTP config
-        print(f"Email alert would be sent for detection: {detection_confidence:.2f}%")
+        # Send email via SMTP
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        text = msg.as_string()
+        server.sendmail(EMAIL_USER, EMAIL_TO, text)
+        server.quit()
+        
+        print(f"Email alert sent successfully for detection: {detection_confidence:.2f}%")
         return True
+        
     except Exception as e:
         print(f"Email error: {e}")
         return False

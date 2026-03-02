@@ -42,12 +42,23 @@ Build Command: pip install -r requirements.txt
 Start Command: gunicorn app:app
 ```
 
-### Step 4: Environment Variables (Optional)
+### Step 4: Environment Variables (REQUIRED!)
 ```
+# Security (REQUIRED - change these!)
+SECRET_KEY=your-long-random-secret-key-here
+ADMIN_PASSWORD=your-secure-admin-password  
+OFFICER_PASSWORD=your-secure-officer-password
+
+# Email alerts (optional)
 EMAIL_USER=your-email@gmail.com
 EMAIL_PASS=your-app-password
+EMAIL_TO=municipal@city.gov
+
+# Optional
 PORT=10000
 ```
+
+**⚠️ SECURITY WARNING**: Never use default passwords in production!
 
 ### Step 5: Deploy
 - Click "Create Web Service"

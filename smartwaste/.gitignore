@@ -1,0 +1,68 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.production
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads and temporary files
+uploads/*
+!uploads/.gitkeep
+temp/
+tmp/
+
+# Logs
+*.log
+logs/
+
+# Model files (large files)
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# Backup files
+*.bak
+*.backup
