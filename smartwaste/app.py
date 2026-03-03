@@ -161,69 +161,88 @@ def dashboard():
     
     return render_template('dashboard.html', detections=detections, user=session['user'])
 
+@app.route('/upload', methods=['POST'])
+def upload_image():
+    """ESP32 compatible upload endpoint - redirects to analyze"""
+    return analyze_image()
+
 @app.route('/analyze', methods=['POST'])
 def analyze_image():
+    """Handle image analysis from ESP32 (raw JPEG) or web form (multipart)"""
     try:
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image provided'}), 400
+        filepath = None
         
-        file = request.files['image']
-        if file.filename == '':
-            return jsonify({'error': 'No image selected'}), 400
-        
-        if file and allowed_file(file.filename):
-            # Save uploaded image
-            filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+        # Handle ESP32 raw JPEG data
+        if request.data:
+            # ESP32 sends raw JPEG bytes
+            filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_esp32.jpg"
             filepath = os.path.join(UPLOAD_FOLDER, filename)
-            file.save(filepath)
             
-            # Run YOLO detection
-            waste_detected = False
-            confidence = 0.0
-            
-            if model:
-                results = model(filepath)
+            # Save raw JPEG data
+            with open(filepath, "wb") as f:
+                f.write(request.data)
                 
-                # Check for waste-related objects (bottles, cups, trash, etc.)
-                waste_classes = ['bottle', 'cup', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot']
-                
-                for result in results:
-                    boxes = result.boxes
-                    if boxes is not None:
-                        for box in boxes:
-                            class_id = int(box.cls[0])
-                            class_name = model.names[class_id]
-                            conf = float(box.conf[0])
-                            
-                            if class_name.lower() in waste_classes and conf > 0.3:
-                                waste_detected = True
-                                confidence = max(confidence, conf * 100)
+        # Handle web form multipart data (for dashboard testing)
+        elif 'image' in request.files:
+            file = request.files['image']
+            if file.filename == '':
+                return jsonify({'error': 'No image selected'}), 400
             
-            # Store detection in database
-            conn = sqlite3.connect('waste_monitoring.db')
-            c = conn.cursor()
-            c.execute('INSERT INTO detections (timestamp, image_path, detection_status, confidence, location) VALUES (?, ?, ?, ?, ?)',
-                     (datetime.now().isoformat(), filepath, 
-                      'WASTE DETECTED' if waste_detected else 'NO WASTE', 
-                      confidence, 'ESP32 Camera Point'))
-            conn.commit()
-            conn.close()
-            
-            # Send email alert if waste detected
-            if waste_detected:
-                send_email_alert(filepath, confidence)
-            
-            return jsonify({
-                'success': True,
-                'waste_detected': waste_detected,
-                'confidence': confidence,
-                'timestamp': datetime.now().isoformat(),
-                'image_path': filepath
-            })
+            if file and allowed_file(file.filename):
+                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                file.save(filepath)
+            else:
+                return jsonify({'error': 'Invalid file type'}), 400
+        else:
+            return jsonify({'error': 'No image data provided'}), 400
         
-        return jsonify({'error': 'Invalid file type'}), 400
+        # Run YOLO detection on saved image
+        waste_detected = False
+        confidence = 0.0
+        
+        if model and filepath:
+            results = model(filepath)
+            
+            # Check for waste-related objects (bottles, cups, trash, etc.)
+            waste_classes = ['bottle', 'cup', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot']
+            
+            for result in results:
+                boxes = result.boxes
+                if boxes is not None:
+                    for box in boxes:
+                        class_id = int(box.cls[0])
+                        class_name = model.names[class_id]
+                        conf = float(box.conf[0])
+                        
+                        if class_name.lower() in waste_classes and conf > 0.3:
+                            waste_detected = True
+                            confidence = max(confidence, conf * 100)
+        
+        # Store detection in database
+        conn = sqlite3.connect('waste_monitoring.db')
+        c = conn.cursor()
+        c.execute('INSERT INTO detections (timestamp, image_path, detection_status, confidence, location) VALUES (?, ?, ?, ?, ?)',
+                 (datetime.now().isoformat(), filepath, 
+                  'WASTE DETECTED' if waste_detected else 'NO WASTE', 
+                  confidence, 'ESP32 Camera Point'))
+        conn.commit()
+        conn.close()
+        
+        # Send email alert if waste detected
+        if waste_detected:
+            send_email_alert(filepath, confidence)
+        
+        return jsonify({
+            'success': True,
+            'waste_detected': waste_detected,
+            'confidence': confidence,
+            'timestamp': datetime.now().isoformat(),
+            'image_path': filepath
+        })
         
     except Exception as e:
+        print(f"Analysis error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/detections')

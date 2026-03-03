@@ -71,13 +71,45 @@ curl http://localhost:10000/api/detections
 
 ## ESP32 Integration
 
-Send images to the `/analyze` endpoint:
+### ✅ ESP32 Compatible Endpoints
+- **POST /analyze** - Main endpoint (supports both ESP32 raw JPEG and web forms)
+- **POST /upload** - ESP32 alias endpoint
+
+### Arduino Code Example
 ```cpp
-// ESP32 code example
-HTTPClient http;
-http.begin("http://your-app.onrender.com/analyze");
-http.addHeader("Content-Type", "multipart/form-data");
-// Add image data and POST
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "esp_camera.h"
+
+const char* ssid = "YOUR_WIFI";
+const char* password = "YOUR_PASSWORD";
+const char* serverURL = "https://your-app.onrender.com/analyze";
+
+void sendImage() {
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (!fb) return;
+    
+    HTTPClient http;
+    http.begin(serverURL);
+    http.addHeader("Content-Type", "application/octet-stream");
+    
+    // Send raw JPEG data (ESP32 compatible!)
+    int httpResponseCode = http.POST(fb->buf, fb->len);
+    
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+        Serial.println("Detection result: " + response);
+    }
+    
+    esp_camera_fb_return(fb);
+    http.end();
+}
+```
+
+### Test ESP32 Compatibility
+```bash
+# Run compatibility test
+python test_esp32_compatibility.py
 ```
 
 ## Project Structure
