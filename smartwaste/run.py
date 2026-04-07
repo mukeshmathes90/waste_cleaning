@@ -6,9 +6,10 @@ Run this file to start the application locally
 
 import os
 import sys
-from app import app
+from app import app, prompt_and_apply_esp_stream
 
 if __name__ == '__main__':
+    prompt_and_apply_esp_stream()
     print("🚀 Starting Smart Waste Monitoring System...")
     print("📍 Local URL: http://localhost:10000")
     print("👤 Login Credentials:")
@@ -21,5 +22,6 @@ if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
         port=10000,
-        debug=True
+        debug=True,
+        load_dotenv=False,
     )

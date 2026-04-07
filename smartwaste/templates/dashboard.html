@@ -7,7 +7,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <meta http-equiv="refresh" content="5">
 </head>
 <body class="dashboard-body">
     <!-- Navigation -->
@@ -52,7 +51,7 @@
                             <div>
                                 <h6 class="card-title">Waste Alerts</h6>
                                 <h3 class="mb-0" id="wasteAlerts">
-                                    {{ detections|selectattr('3', 'equalto', 'WASTE DETECTED')|list|length }}
+                                    {{ detections|selectattr('detection_status', 'equalto', 'WASTE DETECTED')|list|length }}
                                 </h3>
                             </div>
                             <div class="align-self-center">
@@ -68,7 +67,7 @@
                         <div class="d-flex justify-content-between">
                             <div>
                                 <h6 class="card-title">Active Cameras</h6>
-                                <h3 class="mb-0">3</h3>
+                                <h3 class="mb-0">1</h3>
                             </div>
                             <div class="align-self-center">
                                 <i class="fas fa-video fa-2x"></i>
@@ -83,7 +82,7 @@
                         <div class="d-flex justify-content-between">
                             <div>
                                 <h6 class="card-title">System Status</h6>
-                                <h6 class="mb-0">🟢 Online</h6>
+                                <h6 class="mb-0">Online</h6>
                             </div>
                             <div class="align-self-center">
                                 <i class="fas fa-server fa-2x"></i>
@@ -99,9 +98,44 @@
             <div class="col-12">
                 <div class="alert alert-info d-flex align-items-center">
                     <i class="fas fa-sync-alt me-2"></i>
-                    <span>Dashboard auto-refreshes every 5 seconds</span>
+                    <span>Live view updates automatically; refresh the page to reload detections</span>
                     <div class="ms-auto">
                         <small class="text-muted">Last updated: <span id="lastUpdate"></span></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Cam 1 View (pseudo-live) -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <h4 class="mb-0 fw-bold">
+                            <i class="fas fa-robot me-2"></i>Live Cam 1 View
+                        </h4>
+                        <span class="badge bg-light text-success">Live</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="bg-dark text-center">
+                            <img id="liveYoloImg"
+                                 src="{{ url_for('live_yolo_jpg') }}?t={{ (range(1000000)|random) }}"
+                                 alt="Live YOLO"
+                                 style="max-width: 100%; height: auto; display: block; margin: 0 auto; min-height: 360px;"
+                                 onload="document.getElementById('liveYoloFallback').classList.add('d-none');"
+                                 onerror="document.getElementById('liveYoloFallback').classList.remove('d-none');">
+                        </div>
+                        <div id="liveYoloFallback" class="d-none p-2">
+                            <div class="alert alert-warning mb-0">
+                                Live feed not available yet. Start ESP uploads (snapshots to <code>/analyze</code>) or configure <code>ESP_CAM_STREAM_URL</code>.
+                            </div>
+                        </div>
+                        <div class="p-2 small text-muted d-flex justify-content-between align-items-center">
+                            <span id="liveYoloHint"><i class="fas fa-info-circle me-1"></i>Showing latest YOLO-annotated frame from Cam 1.</span>
+                            <button class="btn btn-sm btn-outline-success" onclick="refreshLiveYolo()">
+                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -133,27 +167,27 @@
                                 <tbody>
                                     {% for detection in detections %}
                                     <tr>
-                                        <td>{{ detection[0] }}</td>
+                                        <td>{{ detection.id }}</td>
                                         <td>
-                                            <small>{{ detection[1][:19] if detection[1] else 'N/A' }}</small>
+                                            <small>{{ detection.timestamp[:19] if detection.timestamp else 'N/A' }}</small>
                                         </td>
                                         <td>
-                                            {% if detection[3] == 'WASTE DETECTED' %}
+                                            {% if detection.detection_status == 'WASTE DETECTED' %}
                                                 <span class="badge bg-danger">
-                                                    <i class="fas fa-exclamation-triangle me-1"></i>{{ detection[3] }}
+                                                    <i class="fas fa-exclamation-triangle me-1"></i>{{ detection.detection_status }}
                                                 </span>
                                             {% else %}
                                                 <span class="badge bg-success">
-                                                    <i class="fas fa-check me-1"></i>{{ detection[3] }}
+                                                    <i class="fas fa-check me-1"></i>{{ detection.detection_status }}
                                                 </span>
                                             {% endif %}
                                         </td>
                                         <td>
-                                            {% if detection[4] %}
+                                            {% if detection.confidence %}
                                                 <div class="progress" style="height: 20px;">
                                                     <div class="progress-bar bg-success" role="progressbar" 
-                                                         style="width: {{ detection[4] }}%">
-                                                        {{ "%.1f"|format(detection[4]) }}%
+                                                         style="width: {{ detection.confidence }}%">
+                                                        {{ "%.1f"|format(detection.confidence) }}%
                                                     </div>
                                                 </div>
                                             {% else %}
@@ -163,17 +197,50 @@
                                         <td>
                                             <small>
                                                 <i class="fas fa-map-marker-alt me-1"></i>
-                                                {{ detection[5] or 'Unknown' }}
+                                                {{ detection.location or 'Unknown' }}
                                             </small>
                                         </td>
                                         <td>
-                                            {% if detection[2] %}
-                                                <button class="btn btn-sm btn-outline-primary" 
-                                                        onclick="viewImage('{{ detection[2] }}')">
-                                                    <i class="fas fa-eye me-1"></i>View
-                                                </button>
+                                            {% if detection.image_id %}
+                                                <div class="d-flex align-items-center">
+                                                    <img src="{{ url_for('serve_image_by_id', image_id=detection.image_id) }}" 
+                                                         class="img-thumbnail me-2" 
+                                                         style="width: 50px; height: 50px; object-fit: cover;"
+                                                         alt="Detection Image"
+                                                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjhmOWZhIi8+CjxwYXRoIGQ9Ik0yNSAyMEMyNi4xMDQ2IDIwIDI3IDIwLjg5NTQgMjcgMjJDMjcgMjMuMTA0NiAyNi4xMDQ2IDI0IDI1IDI0QzIzLjg5NTQgMjQgMjMgMjMuMTA0NiAyMyAyMkMyMyAyMC44OTU0IDIzLjg5NTQgMjAgMjUgMjBaIiBmaWxsPSIjNmI3Mjg0Ii8+CjxwYXRoIGQ9Ik0xNSAxNUgzNVYzNUgxNVYxNVoiIHN0cm9rZT0iIzZiNzI4NCIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+Cjwvc3ZnPgo='">
+                                                    <button class="btn btn-sm btn-outline-primary" 
+                                                            onclick="viewImage('{{ url_for('serve_image_by_id', image_id=detection.image_id) }}')">
+                                                        <i class="fas fa-search-plus me-1"></i>View Full
+                                                    </button>
+                                                </div>
+                                            {% elif detection.image_is_static %}
+                                                <div class="d-flex align-items-center">
+                                                    <img src="{{ url_for('static', filename=detection.static_filename) }}"
+                                                         class="img-thumbnail me-2"
+                                                         style="width: 50px; height: 50px; object-fit: cover;"
+                                                         alt="Detection Image"
+                                                         onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjhmOWZhIi8+CjxwYXRoIGQ9Ik0yNSAyMEMyNi4xMDQ2IDIwIDI3IDIwLjg5NTQgMjcgMjJDMjcgMjMuMTA0NiAyNi4xMDQ2IDI0IDI1IDI0QzIzLjg5NTQgMjQgMjMgMjMuMTA0NiAyMyAyMkMyMyAyMC44OTU0IDIzLjg5NTQgMjAgMjUgMjBaIiBmaWxsPSIjNmI3Mjg0Ii8+CjxwYXRoIGQ9Ik0xNSAxNUgzNVYzNUhxNVYxNVoiIHN0cm9rZT0iIzZiNzI4NCIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+Cjwvc3ZnPgo=';\" >
+                                                    <button class="btn btn-sm btn-outline-primary"
+                                                            onclick="viewImage('{{ url_for('static', filename=detection.static_filename) }}')">
+                                                        <i class="fas fa-search-plus me-1"></i>View Full
+                                                    </button>
+                                                </div>
+                                            {% elif detection.image_filename %}
+                                                <div class="d-flex align-items-center">
+                                                    <img src="{{ url_for('serve_image', filename=detection.image_filename) }}"
+                                                         class="img-thumbnail me-2"
+                                                         style="width: 50px; height: 50px; object-fit: cover;"
+                                                         alt="Detection Image"
+                                                         onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAiIGhlaWdodD0iNTAiIHZpZXdCb3g9IjAgMCA1MCA1MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjUwIiBoZWlnaHQ9IjUwIiBmaWxsPSIjZjhmOWZhIi8+CjxwYXRoIGQ9Ik0yNSAyMEMyNi4xMDQ2IDIwIDI3IDIwLjg5NTQgMjcgMjJDMjcgMjMuMTA0NiAyNi4xMDQ2IDI0IDI1IDI0QzIzLjg5NTQgMjQgMjMgMjMuMTA0NiAyMyAyMkMyMyAyMC44OTU0IDIzLjg5NTQgMjAgMjUgMjBaIiBmaWxsPSIjNmI3Mjg0Ii8+CjxwYXRoIGQ9Ik0xNSAxNUgzNVYzNUgxNVYxNVoiIHN0cm9rZT0iIzZiNzI4NCIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+Cjwvc3ZnPgo=';">
+                                                    <button class="btn btn-sm btn-outline-primary"
+                                                            onclick="viewImage('{{ url_for('serve_image', filename=detection.image_filename) }}')">
+                                                        <i class="fas fa-search-plus me-1"></i>View Full
+                                                    </button>
+                                                </div>
                                             {% else %}
-                                                <span class="text-muted">No image</span>
+                                                <span class="text-muted">
+                                                    <i class="fas fa-image me-1"></i>No image
+                                                </span>
                                             {% endif %}
                                         </td>
                                     </tr>
@@ -188,35 +255,6 @@
                             <p class="text-muted">Waiting for ESP32 camera data...</p>
                         </div>
                         {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Test Upload Section -->
-        <div class="row mt-4">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">
-                            <i class="fas fa-upload me-2"></i>Test Image Upload
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <form id="uploadForm" enctype="multipart/form-data">
-                            <div class="row">
-                                <div class="col-md-8">
-                                    <input type="file" class="form-control" id="imageFile" 
-                                           accept="image/*" required>
-                                </div>
-                                <div class="col-md-4">
-                                    <button type="submit" class="btn btn-primary w-100">
-                                        <i class="fas fa-upload me-2"></i>Analyze Image
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                        <div id="uploadResult" class="mt-3"></div>
                     </div>
                 </div>
             </div>
@@ -243,61 +281,23 @@
     <script>
         // Update last update time
         document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+
+        // Pseudo-live: refresh the YOLO image without reloading the whole page
+        function refreshLiveYolo() {
+            const img = document.getElementById('liveYoloImg');
+            if (!img) return;
+            const base = img.src.split('?')[0];
+            img.src = base + '?t=' + Date.now();
+        }
+
+        // Auto-refresh live view (best effort)
+        setInterval(refreshLiveYolo, 1500);
         
         // Image viewing function
-        function viewImage(imagePath) {
-            document.getElementById('modalImage').src = '/' + imagePath;
+        function viewImage(imageSrc) {
+            document.getElementById('modalImage').src = imageSrc;
             new bootstrap.Modal(document.getElementById('imageModal')).show();
         }
-        
-        // Upload form handling
-        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const fileInput = document.getElementById('imageFile');
-            const resultDiv = document.getElementById('uploadResult');
-            
-            if (!fileInput.files[0]) {
-                resultDiv.innerHTML = '<div class="alert alert-warning">Please select an image file.</div>';
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('image', fileInput.files[0]);
-            
-            resultDiv.innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin me-2"></i>Analyzing image...</div>';
-            
-            try {
-                const response = await fetch('/analyze', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    const alertClass = result.waste_detected ? 'alert-danger' : 'alert-success';
-                    const icon = result.waste_detected ? 'fas fa-exclamation-triangle' : 'fas fa-check-circle';
-                    const status = result.waste_detected ? 'WASTE DETECTED' : 'NO WASTE DETECTED';
-                    
-                    resultDiv.innerHTML = `
-                        <div class="alert ${alertClass}">
-                            <i class="${icon} me-2"></i>
-                            <strong>${status}</strong><br>
-                            Confidence: ${result.confidence.toFixed(1)}%<br>
-                            Time: ${new Date(result.timestamp).toLocaleString()}
-                        </div>
-                    `;
-                    
-                    // Refresh page after 2 seconds to show new detection
-                    setTimeout(() => location.reload(), 2000);
-                } else {
-                    resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${result.error}</div>`;
-                }
-            } catch (error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">Upload failed: ${error.message}</div>`;
-            }
-        });
     </script>
 </body>
 </html>

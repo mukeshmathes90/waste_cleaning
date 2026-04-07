@@ -18,31 +18,16 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 import gridfs
 
-def load_dotenv_safe():
-    """Load .env; strip NUL bytes so Windows os.putenv() does not raise ValueError.
-    Rewrites .env if NULs were found (Flask's app.run() also calls load_dotenv)."""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
-    if not os.path.isfile(env_path):
-        return
-    try:
-        with open(env_path, 'rb') as f:
-            raw = f.read()
-        if b'\x00' in raw:
-            cleaned = raw.replace(b'\x00', b'')
-            with open(env_path, 'wb') as f:
-                f.write(cleaned)
-            print("⚠️ Removed NUL bytes from .env (file was corrupted or mis-saved)")
-        load_dotenv(env_path, encoding='utf-8')
-    except Exception as e:
-        print(f"⚠️ Could not load .env: {e}")
-
 # Load environment variables from .env file
-load_dotenv_safe()
+load_dotenv()
 
 app = Flask(__name__)
 
 # Security: Use environment variables for sensitive data
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+
+# Render compatibility - get port from environment or default to 10000
+PORT = int(os.environ.get('PORT', 10000))
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -68,43 +53,17 @@ ESP_CAM_STREAM_URL = os.environ.get('ESP_CAM_STREAM_URL', '')
 # Use webcam as fallback if no ESP32 URL is configured
 USE_WEBCAM_FALLBACK = os.environ.get('USE_WEBCAM_FALLBACK', 'true').lower() == 'true'
 WEBCAM_INDEX = int(os.environ.get('WEBCAM_INDEX', '0'))  # Default webcam device index
-ESP_CAM_LOCATION = os.environ.get('ESP_CAM_LOCATION', 'ESP32 Camera Point')
+
+# Location Configuration - Specific address for Erode
+ESP_CAM_LOCATION = os.environ.get('ESP_CAM_LOCATION', '2nd Cross Street, Vinayaka Nagar, Erode - 638001')
+ESP_CAM_SHORT_LOCATION = os.environ.get('ESP_CAM_SHORT_LOCATION', '2nd Cross Street, Erode')
+ESP_CAM_FULL_ADDRESS = os.environ.get('ESP_CAM_FULL_ADDRESS', '2nd Cross Street, Vinayaka Nagar, Erode, Tamil Nadu - 638001')
+
+# YOLO Detection Settings
 LIVE_YOLO_FPS = float(os.environ.get('LIVE_YOLO_FPS', '2'))  # dashboard refresh / worker frame rate target
 LIVE_YOLO_DETECT_EVERY_SEC = float(os.environ.get('LIVE_YOLO_DETECT_EVERY_SEC', '2'))  # run YOLO at most every N seconds
 LIVE_YOLO_MIN_CONF = float(os.environ.get('LIVE_YOLO_MIN_CONF', '0.3'))
 LIVE_YOLO_EMAIL_COOLDOWN_SEC = int(os.environ.get('LIVE_YOLO_EMAIL_COOLDOWN_SEC', '60'))
-
-def prompt_and_apply_esp_stream():
-    """
-    Ask for ESP32-CAM IP (or full stream URL) once at startup.
-    Press Enter to keep the value from .env (ESP_CAM_STREAM_URL).
-    Set SKIP_ESP_PROMPT=1 to skip (automation / servers).
-    """
-    global ESP_CAM_STREAM_URL
-    if os.environ.get('SKIP_ESP_PROMPT', '').strip().lower() in ('1', 'true', 'yes'):
-        return
-    current = ESP_CAM_STREAM_URL or '(not set)'
-    port = (os.environ.get('ESP_CAM_STREAM_PORT', '81') or '81').strip()
-    print("\n" + "=" * 60)
-    print("ESP32-CAM — live MJPEG stream (optional)")
-    print(f"  From .env now: {current}")
-    print("  Type: IP only → uses http://IP:" + port + "/stream")
-    print("  Or paste full URL (http://...). Enter = keep .env value.")
-    try:
-        line = input("  ESP IP or stream URL: ").strip()
-    except EOFError:
-        return
-    if not line:
-        print("  Keeping .env / empty.\n")
-        return
-    if line.lower().startswith('http://') or line.lower().startswith('https://'):
-        ESP_CAM_STREAM_URL = line.rstrip('/')
-    else:
-        line = line.rstrip('/')
-        ESP_CAM_STREAM_URL = f"http://{line}:{port}/stream"
-    os.environ['ESP_CAM_STREAM_URL'] = ESP_CAM_STREAM_URL
-    print(f"  Using: {ESP_CAM_STREAM_URL}\n")
-    print("=" * 60 + "\n")
 
 # Latest live frames (JPEG bytes)
 _live_lock = threading.Lock()
@@ -216,16 +175,15 @@ def _run_yolo_on_frame(frame_bgr):
     results = model(frame_bgr)
     for result in results:
         boxes = result.boxes
-        if boxes is None:
-            continue
-        for box in boxes:
-            class_id = int(box.cls[0])
-            class_name = model.names.get(class_id, str(class_id))
-            conf = float(box.conf[0])
-            if _is_waste_class(class_name) and conf >= LIVE_YOLO_MIN_CONF:
-                waste_detected = True
-                confidence_pct = max(confidence_pct, conf * 100)
-                detected_objects.append(f"{class_name} ({conf*100:.1f}%)")
+        if boxes is not None:
+            for box in boxes:
+                class_id = int(box.cls[0])
+                class_name = model.names.get(class_id, str(class_id))
+                conf = float(box.conf[0])
+                if _is_waste_class(class_name) and conf >= LIVE_YOLO_MIN_CONF:
+                    waste_detected = True
+                    confidence_pct = max(confidence_pct, conf * 100)
+                    detected_objects.append(f"{class_name} ({conf*100:.1f}%)")
 
     detection_details = "No waste detected"
     if detected_objects:
@@ -498,16 +456,20 @@ def send_email_alert_with_image(image_path, detection_confidence, detection_deta
 
 📅 Detection Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 🎯 Confidence Level: {detection_confidence:.2f}%
-📍 Location: ESP32 Camera Point - Roadside Monitoring
+📍 Location: {ESP_CAM_FULL_ADDRESS}
+📍 Short Location: {ESP_CAM_SHORT_LOCATION}
 🤖 AI System: YOLO Object Detection
 
 📊 DETECTION DETAILS:
 {detection_details if detection_details else 'Waste objects detected in the monitored area'}
 
 ⚡ IMMEDIATE ACTION REQUIRED:
-1. Dispatch waste collection team to the location
+1. Dispatch waste collection team to: {ESP_CAM_SHORT_LOCATION}
 2. Update collection status in the dashboard
-3. Monitor for recurring waste accumulation
+3. Monitor for recurring waste accumulation at this location
+
+🗺️ DETAILED ADDRESS:
+{ESP_CAM_FULL_ADDRESS}
 
 🌐 System Dashboard: 
    Access your monitoring dashboard for more details and images
@@ -522,6 +484,7 @@ AI for Cleaner Cities 🌱
 ---
 This is an automated alert from your Smart Waste Monitoring System.
 For technical support, check the system dashboard or logs.
+Location: {ESP_CAM_SHORT_LOCATION}, Erode
         """
         
         msg.attach(MIMEText(body, 'plain'))
@@ -660,7 +623,7 @@ def dashboard():
                     'image_filename': os.path.basename(image_path) if image_path else '',
                     'image_is_static': image_is_static,
                     'static_filename': static_filename,
-                    'detected_objects': row[6] if len(row) > 6 else '',
+                    'detected_objects': row[6] if len(row) > 6 and row[6] else [],
                     'detection_details': row[7] if len(row) > 7 else ''
                 })
     except Exception as e:
@@ -726,29 +689,37 @@ def analyze_image():
         
         # Handle ESP32 raw JPEG data
         if request.data:
-            # ESP32 sends raw JPEG bytes
-            filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_esp32.jpg"
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            
-            # Save raw JPEG data
-            raw_bytes = request.data
-            with open(filepath, "wb") as f:
-                f.write(raw_bytes)
-            print(f"📷 ESP32 image saved: {filepath}")
+            try:
+                # ESP32 sends raw JPEG bytes
+                filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_esp32.jpg"
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                
+                # Save raw JPEG data
+                raw_bytes = request.data
+                with open(filepath, "wb") as f:
+                    f.write(raw_bytes)
+                print(f"📷 ESP32 image saved: {filepath}")
+            except Exception as e:
+                print(f"❌ Error saving ESP32 image: {e}")
+                return jsonify({'error': f'Failed to save image: {str(e)}'}), 500
                 
         # Handle web form multipart data (for dashboard testing)
         elif 'image' in request.files:
-            file = request.files['image']
-            if file.filename == '':
-                return jsonify({'error': 'No image selected'}), 400
-            
-            if file and allowed_file(file.filename):
-                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                file.save(filepath)
-                print(f"🌐 Web form image saved: {filepath}")
-            else:
-                return jsonify({'error': 'Invalid file type'}), 400
+            try:
+                file = request.files['image']
+                if file.filename == '':
+                    return jsonify({'error': 'No image selected'}), 400
+                
+                if file and allowed_file(file.filename):
+                    filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                    filepath = os.path.join(UPLOAD_FOLDER, filename)
+                    file.save(filepath)
+                    print(f"🌐 Web form image saved: {filepath}")
+                else:
+                    return jsonify({'error': 'Invalid file type'}), 400
+            except Exception as e:
+                print(f"❌ Error handling web form upload: {e}")
+                return jsonify({'error': f'Failed to process upload: {str(e)}'}), 500
         else:
             return jsonify({'error': 'No image data provided'}), 400
         
@@ -760,54 +731,55 @@ def analyze_image():
         annotated_filepath = None
         
         if model and filepath:
-            print("🤖 Running YOLO detection...")
-            results = model(filepath)
-            
-            # Check for waste-related objects
-            waste_classes = ['bottle', 'cup', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 
-                           'broccoli', 'carrot', 'pizza', 'donut', 'cake', 'chair', 'couch', 
-                           'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 
-                           'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 
-                           'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 
-                           'teddy bear', 'hair drier', 'toothbrush']
-            
-            for result in results:
-                boxes = result.boxes
-                if boxes is not None:
-                    for box in boxes:
-                        class_id = int(box.cls[0])
-                        class_name = model.names[class_id]
-                        conf = float(box.conf[0])
-                        
-                        if class_name.lower() in waste_classes and conf > 0.3:
-                            waste_detected = True
-                            confidence = max(confidence, conf * 100)
-                            detected_objects.append(f"{class_name} ({conf*100:.1f}%)")
-            
-            if detected_objects:
-                detection_details = f"Detected objects: {', '.join(detected_objects)}"
-            
-            print(f"🎯 Detection result: {waste_detected}, Confidence: {confidence:.2f}%")
-
-            # Update "Live YOLO View" with latest frame (raw + annotated)
             try:
-                if raw_bytes:
-                    with _live_lock:
-                        _live_raw_jpeg = raw_bytes
-                        _live_last_frame_ts = time.time()
+                print("🤖 Running YOLO detection...")
+                results = model(filepath)
+                
+                # Check for waste-related objects
+                waste_classes = ['bottle', 'cup', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 
+                               'broccoli', 'carrot', 'pizza', 'donut', 'cake', 'chair', 'couch', 
+                               'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 
+                               'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 
+                               'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 
+                               'teddy bear', 'hair drier', 'toothbrush']
+            
+                for result in results:
+                    boxes = result.boxes
+                    if boxes is not None:
+                        for box in boxes:
+                            class_id = int(box.cls[0])
+                            class_name = model.names[class_id]
+                            conf = float(box.conf[0])
+                            
+                            if class_name.lower() in waste_classes and conf > 0.3:
+                                waste_detected = True
+                                confidence = max(confidence, conf * 100)
+                                detected_objects.append(f"{class_name} ({conf*100:.1f}%)")
+            
+                if detected_objects:
+                    detection_details = f"Detected objects: {', '.join(detected_objects)}"
+            
+                print(f"🎯 Detection result: {waste_detected}, Confidence: {confidence:.2f}%")
 
-                annotated = results[0].plot()
-                yolo_jpeg = _encode_jpeg_bgr(annotated, quality=80)
-                if yolo_jpeg:
-                    with _live_lock:
-                        _live_yolo_jpeg = yolo_jpeg
-                        _live_last_detection_ts = time.time()
-            except Exception as e:
-                print(f"⚠️ Failed to update live YOLO view: {e}")
+                # Update "Live YOLO View" with latest frame (raw + annotated)
+                try:
+                    if raw_bytes:
+                        with _live_lock:
+                            _live_raw_jpeg = raw_bytes
+                            _live_last_frame_ts = time.time()
+                
+                    annotated = results[0].plot()
+                    yolo_jpeg = _encode_jpeg_bgr(annotated, quality=80)
+                    if yolo_jpeg:
+                        with _live_lock:
+                            _live_yolo_jpeg = yolo_jpeg
+                            _live_last_detection_ts = time.time()
+                except Exception as e:
+                    print(f"⚠️ Failed to update live YOLO view: {e}")
         
         # Store detection in database ONLY if waste is detected
         if waste_detected:
-            # Prefer storing the annotated image (what officer sees)
+            # Prefer storing annotated image (what officer sees)
             try:
                 if model and filepath:
                     annotated = results[0].plot()
@@ -830,7 +802,7 @@ def analyze_image():
                     'image_id': image_id,
                     'detection_status': 'WASTE DETECTED',
                     'confidence': confidence,
-                    'location': 'ESP32 Camera Point',
+                    'location': ESP_CAM_LOCATION,
                     'detected_objects': detected_objects,
                     'detection_details': detection_details
                 }
@@ -849,10 +821,10 @@ def analyze_image():
                     c.execute('''INSERT INTO detections 
                                (timestamp, image_path, detection_status, confidence, location, detected_objects, detection_details) 
                                VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                             (datetime.now().isoformat(), store_path, 
-                              'WASTE DETECTED', 
-                              confidence, 'ESP32 Camera Point',
-                              ', '.join(detected_objects), detection_details))
+                                     (datetime.now().isoformat(), store_path, 
+                                      'WASTE DETECTED', 
+                                      confidence, ESP_CAM_LOCATION,
+                                      ', '.join(detected_objects), detection_details))
                     conn.commit()
                     conn.close()
                     print(f"📊 Waste detection stored in SQLite database")
@@ -981,8 +953,27 @@ def test_email_route():
     else:
         return jsonify({'error': 'No sample image found for testing'}), 400
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Render"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'yolo_model': 'loaded' if model else 'not_loaded',
+        'esp_stream': 'configured' if ESP_CAM_STREAM_URL else 'not_configured'
+    })
+
+@app.route('/config')
+def get_config():
+    """Get configuration for ESP32 setup"""
+    return jsonify({
+        'esp_stream_url': ESP_CAM_STREAM_URL,
+        'analyze_endpoint': '/analyze',
+        'stream_endpoint': '/stream',
+        'server_url': request.host_url.rstrip('/')
+    })
+
 if __name__ == '__main__':
-    prompt_and_apply_esp_stream()
     # Create uploads directory
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     
@@ -1008,6 +999,7 @@ if __name__ == '__main__':
         print(f"⚠️  No camera configured - live stream disabled")
     
     # Run app
-    port = int(os.environ.get('PORT', 10000))
-    print(f"\n🚀 Starting Flask server on http://0.0.0.0:{port}")
-    app.run(host='0.0.0.0', port=port, debug=False, load_dotenv=False)
+    print(f"\n🚀 Starting Flask server on http://0.0.0.0:{PORT}")
+    print(f"🌐 Health check: http://0.0.0.0:{PORT}/health")
+    print(f"⚙️  Config endpoint: http://0.0.0.0:{PORT}/config")
+    app.run(host='0.0.0.0', port=PORT, debug=False)

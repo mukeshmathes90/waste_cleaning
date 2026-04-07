@@ -1,0 +1,48 @@
+services:
+  # Type of service
+  type: web
+  
+  # Name of your service
+  name: smart-waste-monitoring
+  
+  # Runtime environment
+  runtime: python
+  
+  # Build command
+  buildCommand: "pip install -r requirements.txt"
+  
+  # Start command
+  startCommand: "python app.py"
+  
+  # Environment variables (set these in Render dashboard)
+  envVars:
+    - key: PORT
+      value: 10000
+    - key: SECRET_KEY
+      generateValue: true
+    # Set these in Render dashboard:
+    # - key: EMAIL_USER
+    #   value: your-email@gmail.com
+    # - key: EMAIL_PASS
+    #   value: your-app-password
+    # - key: EMAIL_TO
+    #   value: recipient@gmail.com
+    # - key: MONGODB_URI
+    #   value: mongodb+srv://...
+    # - key: DATABASE_NAME
+    #   value: waste_monitoring
+    # - key: ADMIN_PASSWORD
+    #   value: your-secure-password
+    # - key: OFFICER_PASSWORD
+    #   value: your-officer-password
+    # - key: ESP_CAM_STREAM_URL
+    #   value: http://your-esp32-ip:81/stream
+  
+  # Health check path
+  healthCheckPath: /health
+  
+  # Auto-deploy on push to main branch
+  autoDeploy: true
+  
+  # Plan (free tier)
+  plan: free
